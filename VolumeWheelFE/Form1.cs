@@ -22,6 +22,7 @@ namespace VolumeWheelFE
         DeviceSessionPair[] selectedPairs = new DeviceSessionPair[4];
         int[] lastPosition = { -333, -333, -333, -333 };
         List<int>[] processIds = new List<int>[4];
+        int[] chosenSessions = new int[4];
         //List<int[]> processIds = new List<int[]>();
 
         public Form1()
@@ -95,7 +96,7 @@ namespace VolumeWheelFE
                             Console.WriteLine("Process not found: " + ex.Message);
                             sessionName = string.IsNullOrWhiteSpace(session.DisplayName) ? "Unnamed Session" : session.DisplayName;
                         }
-                        sessionComboBox.Items.Add(sessionName);
+                        sessionComboBox.Items.Add(session);
                         processIds[comboBoxIndex].Add(session.ProcessId);
                     }
                 }
@@ -135,6 +136,86 @@ namespace VolumeWheelFE
                 e.Value = device.FullName;
             }
         }
+        private void comboBox2_Format(object sender, ListControlConvertEventArgs e)
+        {
+            if (e.ListItem is IAudioSession session)
+            {
+                string sessionName;
+                try
+                {
+                    Process process = Process.GetProcessById(session.ProcessId);
+                    sessionName = process.ProcessName;
+                }
+                catch (ArgumentException ex)
+                {
+                    // Process with specified ID does not exist
+                    Console.WriteLine("Process not found: " + ex.Message);
+                    sessionName = string.IsNullOrWhiteSpace(session.DisplayName) ? "Unnamed Session" : session.DisplayName;
+                }
+                e.Value = sessionName;
+                chosenSessions[0] = session.ProcessId;
+            }
+        }
+        private void comboBox3_Format(object sender, ListControlConvertEventArgs e)
+        {
+            if (e.ListItem is IAudioSession session)
+            {
+                string sessionName;
+                try
+                {
+                    Process process = Process.GetProcessById(session.ProcessId);
+                    sessionName = process.ProcessName;
+                }
+                catch (ArgumentException ex)
+                {
+                    // Process with specified ID does not exist
+                    Console.WriteLine("Process not found: " + ex.Message);
+                    sessionName = string.IsNullOrWhiteSpace(session.DisplayName) ? "Unnamed Session" : session.DisplayName;
+                }
+                e.Value = sessionName;
+                chosenSessions[1] = session.ProcessId;
+            }
+        }
+        private void comboBox13_Format(object sender, ListControlConvertEventArgs e)
+        {
+            if (e.ListItem is IAudioSession session)
+            {
+                string sessionName;
+                try
+                {
+                    Process process = Process.GetProcessById(session.ProcessId);
+                    sessionName = process.ProcessName;
+                }
+                catch (ArgumentException ex)
+                {
+                    // Process with specified ID does not exist
+                    Console.WriteLine("Process not found: " + ex.Message);
+                    sessionName = string.IsNullOrWhiteSpace(session.DisplayName) ? "Unnamed Session" : session.DisplayName;
+                }
+                e.Value = sessionName;
+                chosenSessions[2] = session.ProcessId;
+            }
+        }
+        private void comboBox11_Format(object sender, ListControlConvertEventArgs e)
+        {
+            if (e.ListItem is IAudioSession session)
+            {
+                string sessionName;
+                try
+                {
+                    Process process = Process.GetProcessById(session.ProcessId);
+                    sessionName = process.ProcessName;
+                }
+                catch (ArgumentException ex)
+                {
+                    // Process with specified ID does not exist
+                    Console.WriteLine("Process not found: " + ex.Message);
+                    sessionName = string.IsNullOrWhiteSpace(session.DisplayName) ? "Unnamed Session" : session.DisplayName;
+                }
+                e.Value = sessionName;
+                chosenSessions[3] = session.ProcessId;
+            }
+        }
 
         private void button1_Click(object sender, EventArgs e)
         {
@@ -155,13 +236,17 @@ namespace VolumeWheelFE
             
             foreach (var session in device.SessionController.All())
             {
-                foreach (int item in processIds[comboboxIndex])
+                if (chosenSessions[comboboxIndex] == session.ProcessId)
                 {
-                    if (session.ProcessId == item)
-                    {
-                        return session;
-                    }
+                    return session;
                 }
+                //foreach (int item in processIds[comboboxIndex])
+                //{
+                //    if (session.ProcessId == item)
+                //    {
+                //        return session;
+                //    }
+                //}
             }
             return null;
         }

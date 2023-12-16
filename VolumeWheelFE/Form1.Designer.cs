@@ -87,7 +87,7 @@ namespace VolumeWheelFE
             this.comboBox2.Size = new System.Drawing.Size(224, 21);
             this.comboBox2.TabIndex = 3;
             this.comboBox2.Text = "Application Selection";
-            this.comboBox2.SelectedIndexChanged += new System.EventHandler(this.comboBox2_SelectedIndexChanged);
+            this.comboBox2.Format += new System.Windows.Forms.ListControlConvertEventHandler(this.comboBox2_Format);
             // 
             // comboBox3
             // 
@@ -97,6 +97,7 @@ namespace VolumeWheelFE
             this.comboBox3.Size = new System.Drawing.Size(224, 21);
             this.comboBox3.TabIndex = 6;
             this.comboBox3.Text = "Application Selection";
+            this.comboBox3.Format += new System.Windows.Forms.ListControlConvertEventHandler(this.comboBox3_Format);
             // 
             // comboBox4
             // 
@@ -152,6 +153,7 @@ namespace VolumeWheelFE
             this.comboBox11.Size = new System.Drawing.Size(225, 21);
             this.comboBox11.TabIndex = 21;
             this.comboBox11.Text = "Application Selection";
+            this.comboBox11.Format += new System.Windows.Forms.ListControlConvertEventHandler(this.comboBox11_Format);
             // 
             // comboBox12
             // 
@@ -180,6 +182,7 @@ namespace VolumeWheelFE
             this.comboBox13.Size = new System.Drawing.Size(224, 21);
             this.comboBox13.TabIndex = 18;
             this.comboBox13.Text = "Application Selection";
+            this.comboBox13.Format += new System.Windows.Forms.ListControlConvertEventHandler(this.comboBox13_Format);
             // 
             // comboBox14
             // 
