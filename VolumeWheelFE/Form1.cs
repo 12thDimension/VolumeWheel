@@ -5,6 +5,8 @@ using System.Linq;
 using System.Windows.Forms;
 using AudioSwitcher.AudioApi.CoreAudio;
 using AudioSwitcher.AudioApi.Session;
+using System.Collections.Generic;
+
 
 namespace VolumeWheelFE
 {
@@ -18,11 +20,16 @@ namespace VolumeWheelFE
         static int lastEncoderValue = 0;
         CoreAudioController audioController = new CoreAudioController();
         DeviceSessionPair[] selectedPairs = new DeviceSessionPair[4];
-        int[] lastPosition = [0,0,0,0];
-        bool justStarted = true;
+        int[] lastPosition = { -333, -333, -333, -333 };
+        List<int>[] processIds = new List<int>[4];
+        //List<int[]> processIds = new List<int[]>();
 
         public Form1()
         {
+            processIds[0] = new List<int> {};
+            processIds[1] = new List<int> {};
+            processIds[2] = new List<int> {};
+            processIds[3] = new List<int> {};
             InitializeComponent();
             PopulateAudioDevices();
             //ListAudioSessions();
@@ -45,28 +52,28 @@ namespace VolumeWheelFE
 
         private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
         {
-            var device = comboBox1.SelectedItem as CoreAudioDevice;
-            PopulateSessions(device, comboBox2);
+            var device = comboBox1.SelectedItem as CoreAudioDevice;   
+            PopulateSessions(device, comboBox2, 0);
         }
 
         private void comboBox4_SelectedIndexChanged(object sender, EventArgs e)
         {
             var device = comboBox4.SelectedItem as CoreAudioDevice;
-            PopulateSessions(device, comboBox3);
+            PopulateSessions(device, comboBox3, 1);
         }
 
         private void comboBox14_SelectedIndexChanged(object sender, EventArgs e)
         {
             var device = comboBox14.SelectedItem as CoreAudioDevice;
-            PopulateSessions(device, comboBox13);
+            PopulateSessions(device, comboBox13, 2);
         }
         private void comboBox12_SelectedIndexChanged(object sender, EventArgs e)
         {
             var device = comboBox12.SelectedItem as CoreAudioDevice;
-            PopulateSessions(device, comboBox11);
+            PopulateSessions(device, comboBox11, 3);
         }
 
-        private void PopulateSessions(CoreAudioDevice device, ComboBox sessionComboBox)
+        private void PopulateSessions(CoreAudioDevice device, ComboBox sessionComboBox, int comboBoxIndex)
         {
             sessionComboBox.Items.Clear();
 
@@ -89,6 +96,7 @@ namespace VolumeWheelFE
                             sessionName = string.IsNullOrWhiteSpace(session.DisplayName) ? "Unnamed Session" : session.DisplayName;
                         }
                         sessionComboBox.Items.Add(sessionName);
+                        processIds[comboBoxIndex].Add(session.ProcessId);
                     }
                 }
             }
@@ -130,12 +138,32 @@ namespace VolumeWheelFE
 
         private void button1_Click(object sender, EventArgs e)
         {
-            selectedPairs[0] = new DeviceSessionPair { Device = comboBox1.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox1, comboBox2.SelectedItem as string) };
-            selectedPairs[1] = new DeviceSessionPair { Device = comboBox4.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox4, comboBox3.SelectedItem as string) };
-            selectedPairs[2] = new DeviceSessionPair { Device = comboBox14.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox14, comboBox13.SelectedItem as string) };
-            selectedPairs[3] = new DeviceSessionPair { Device = comboBox12.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox12, comboBox11.SelectedItem as string) };
-            // ... Repeat for other device/session pairs
+            selectedPairs[0] = new DeviceSessionPair { Device = comboBox1.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox1, 0) };
+            selectedPairs[1] = new DeviceSessionPair { Device = comboBox4.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox4, 1) };
+            selectedPairs[2] = new DeviceSessionPair { Device = comboBox14.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox14, 2) };
+            selectedPairs[3] = new DeviceSessionPair { Device = comboBox12.SelectedItem as CoreAudioDevice, Session = GetSessionFromName(comboBox12, 3) };
             start_app();
+        }
+
+        private IAudioSession GetSessionFromName(ComboBox deviceComboBox, int comboboxIndex)
+        {
+            var device = deviceComboBox.SelectedItem as CoreAudioDevice;
+            if (device == null)
+            {
+                return null;
+            }
+            
+            foreach (var session in device.SessionController.All())
+            {
+                foreach (int item in processIds[comboboxIndex])
+                {
+                    if (session.ProcessId == item)
+                    {
+                        return session;
+                    }
+                }
+            }
+            return null;
         }
 
         private void start_app()
@@ -163,36 +191,23 @@ namespace VolumeWheelFE
             }
         }
 
-        private IAudioSession GetSessionFromName(ComboBox deviceComboBox, string sessionName)
-        {
-            var device = deviceComboBox.SelectedItem as CoreAudioDevice;
-            if (device != null)
-            {
-                foreach (var session in device.SessionController.All())
-                {
-                    if (session.DisplayName == sessionName)
-                    {
-                        return session;
-                    }
-                }
-            }
-            return null;
-        }
 
         private void HandleArduinoInput(string input)
         {
             // Assuming input format is "Encoder#:Value"
             var parts = input.Split(':');
-            if (parts.Length == 2 && int.TryParse(parts[0], out int encoderIndex) && int.TryParse(parts[1], out int volumeChange))
+            if (parts.Length == 2 && int.TryParse(parts[0], out int encoderIndex) && int.TryParse(parts[1], out int newPosition))
             {
                 if (encoderIndex >= 0 && encoderIndex < selectedPairs.Length)
                 {
-                    if (justStarted)
+                    if (lastPosition[encoderIndex]==-333)
                     {
-                        justStarted = false;
+                        lastPosition[encoderIndex] = newPosition;
                         
                     }
+                    int volumeChange = newPosition - lastPosition[encoderIndex];
                     AdjustSessionVolume(selectedPairs[encoderIndex], volumeChange);
+                    lastPosition[encoderIndex] = newPosition;
                 }
             }
             // ... existing button press/release handling
@@ -269,6 +284,11 @@ namespace VolumeWheelFE
                 }
             }
             return null; // Return null if no Arduino is detected
+        }
+
+        private void textBox7_TextChanged(object sender, EventArgs e)
+        {
+
         }
     }
 }
