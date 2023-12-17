@@ -254,32 +254,33 @@ namespace VolumeWheelFE
         private void start_app()
         {
             string arduinoPort = DetectArduinoPort();
-            if (arduinoPort != null)
+            if (arduinoPort == null)
             {
-                using (SerialPort arduino = new SerialPort(arduinoPort, 9600))
+                Console.WriteLine("Arduino not found.");
+                return;
+            }
+            using (SerialPort arduino = new SerialPort(arduinoPort, 9600))
+            {
+                arduino.Open();
+                while (true)
                 {
-                    arduino.Open();
-                    while (true)
+                    try
                     {
-                        try
-                        {
-                            string data = arduino.ReadLine().Trim();
-                            HandleArduinoInput(data);
-                        }
-                        catch (TimeoutException) { }
+                        string data = arduino.ReadLine().Trim();
+                        HandleArduinoInput(data);
+                    }
+                    catch (TimeoutException) {
+                        Console.WriteLine("Arduino Timeout");
                     }
                 }
             }
-            else
-            {
-                Console.WriteLine("Arduino not found.");
-            }
+            
         }
 
 
         private void HandleArduinoInput(string input)
         {
-            // Assuming input format is "Encoder#:Value"
+            // Input format is "Encoder#:Value"
             var parts = input.Split(':');
             if (parts.Length == 2 && int.TryParse(parts[0], out int encoderIndex) && int.TryParse(parts[1], out int newPosition))
             {
@@ -295,8 +296,6 @@ namespace VolumeWheelFE
                     lastPosition[encoderIndex] = newPosition;
                 }
             }
-            // ... existing button press/release handling
-
             //if (input == "Button Pressed")
             //{
             //    if (!buttonPressStart.HasValue)
@@ -312,16 +311,6 @@ namespace VolumeWheelFE
             //        defaultPlaybackDevice.Mute(!defaultPlaybackDevice.IsMuted);
             //    }
             //    buttonPressStart = null;
-            //}
-            //else if (int.TryParse(input, out int encoderValue))
-            //{
-            //    // Calculate the change in encoder value
-            //    lastEncoderValue = encoderValue;
-
-            //    // Adjust volume by 1% per 4 encoder units
-            //    double currentVolume = defaultPlaybackDevice.Volume;
-            //    double newVolume = Math.Max(0, Math.Min(100, currentVolume + (encoderValue - lastEncoderValue)));
-            //    defaultPlaybackDevice.Volume = newVolume;
             //}
         }
         static void AdjustSessionVolume(DeviceSessionPair pair, int volumeChange)
