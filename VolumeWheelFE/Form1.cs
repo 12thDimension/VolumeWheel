@@ -1,249 +1,142 @@
 ﻿using System;
-using System.Diagnostics;
 using System.IO.Ports;
-using System.Linq;
-using System.Windows.Forms;
-using AudioSwitcher.AudioApi.CoreAudio;
 using AudioSwitcher.AudioApi.Session;
 using System.Collections.Generic;
+using AudioSwitcher.AudioApi;
+using AudioSwitcher.AudioApi.CoreAudio;
 
 
-namespace VolumeWheelFE
+class Program
 {
-    public partial class Form1 : Form
+    static List<IAudioSession> audioSessions = new List<IAudioSession> { };
+    static int[] lastPosition = { -333, -333, -333, -333 };
+    static DateTime?[] buttonPressStarts = new DateTime?[4];
+    static TimeSpan debounceTime = TimeSpan.FromMilliseconds(50);
+
+
+    static void Main(string[] args)
     {
-        static CoreAudioDevice defaultPlaybackDevice = new CoreAudioController().DefaultPlaybackDevice;
-        static bool buttonPreviouslyPressed = false;
-        static DateTime lastButtonPressTime = DateTime.MinValue;
-        static DateTime?[] buttonPressStarts = new DateTime?[4];
-        static readonly TimeSpan debounceTime = TimeSpan.FromMilliseconds(50);
-        static int lastEncoderValue = 0;
+        string arduinoPort = DetectArduinoPort();
+        if (arduinoPort == null)
+        {
+            Console.WriteLine("Arduino not found.");
+            return;
+        }
         CoreAudioController audioController = new CoreAudioController();
-        DeviceSessionPair[] selectedPairs = new DeviceSessionPair[4];
-        IAudioSession[] selectedApp = new IAudioSession[4];
-        int[] lastPosition = { -333, -333, -333, -333 };
-        List<int>[] processIds = new List<int>[4];
-        int[] chosenSessions = new int[4];
-        List<IAudioSession> audioSessions = new List<IAudioSession> { };
-
-        public Form1()
+        var devices = audioController.GetPlaybackDevices(AudioSwitcher.AudioApi.DeviceState.Active);
+        foreach (var device in devices)
         {
-            processIds[0] = new List<int> { };
-            processIds[1] = new List<int> { };
-            processIds[2] = new List<int> { };
-            processIds[3] = new List<int> { };
-            InitializeComponent();
-            PopulateSessions();
-        }
-
-        private void PopulateSessions()
-        {
-            var devices = audioController.GetPlaybackDevices(AudioSwitcher.AudioApi.DeviceState.Active);
-            ComboBox[] comboBoxes = { comboBox2, comboBox3, comboBox11, comboBox13 };
-
-            foreach (var device in devices)
+            foreach (var session in device.SessionController.All())
             {
-                foreach (var session in device.SessionController.All())
+                if (session != null && !session.IsSystemSession)
                 {
-                    if (session != null && !session.IsSystemSession)
-                    {
-                        audioSessions.Add(session);
-                    }
-                }
-            }
-
-            var uniqueSessions = audioSessions
-                .GroupBy(session => string.IsNullOrWhiteSpace(session.DisplayName) ? session.ProcessId.ToString() : session.DisplayName)
-                .Select(group => group.First())
-                .ToList();
-            foreach (var comboBox in comboBoxes)
-            {
-                comboBox.Items.Clear();
-                foreach (var session in uniqueSessions)
-                {
-                    comboBox.Items.Add(session);
+                    audioSessions.Add(session);
                 }
             }
         }
 
+        using (SerialPort arduino = new SerialPort(arduinoPort, 9600))
+        {
+            arduino.Open();
+            while (true)
+            {
+                string data = arduino.ReadLine().Trim();
+                HandleArduinoInput(data);
+            }
+        }
+    }
 
-        private void comboBox2_Format(object sender, ListControlConvertEventArgs e)
+    static void HandleArduinoInput(string input)
+    {
+        // Input format is "Encoder#:Value" or "Encoder#::P" or "Encoder#::R"
+        var parts = input.Split(':');
+        if (parts.Length == 2 && int.TryParse(parts[0], out int encoderIndex) && int.TryParse(parts[1], out int newPosition))
         {
-            if (e.ListItem is IAudioSession session)
+            if (lastPosition[encoderIndex] == -333)
             {
-                e.Value = generateCleanSessionName(session);
-                chosenSessions[0] = session.ProcessId;
-            }
-        }
-        private void comboBox3_Format(object sender, ListControlConvertEventArgs e)
-        {
-            if (e.ListItem is IAudioSession session)
-            {
-                e.Value = generateCleanSessionName(session);
-                chosenSessions[1] = session.ProcessId;
-            }
-        }
-        private void comboBox13_Format(object sender, ListControlConvertEventArgs e)
-        {
-            if (e.ListItem is IAudioSession session)
-            {
-                e.Value = generateCleanSessionName(session);
-                chosenSessions[2] = session.ProcessId;
-            }
-        }
-        private void comboBox11_Format(object sender, ListControlConvertEventArgs e)
-        {
-            if (e.ListItem is IAudioSession session)
-            {
-                e.Value = generateCleanSessionName(session);
-                chosenSessions[3] = session.ProcessId;
-            }
-        }
-        private string generateCleanSessionName(IAudioSession session)
-        {
-            string sessionName;
-            try
-            {
-                Process process = Process.GetProcessById(session.ProcessId);
-                sessionName = process.ProcessName;
-            }
-            catch (ArgumentException ex)
-            {
-                Console.WriteLine("Process not found: " + ex.Message);
-                sessionName = string.IsNullOrWhiteSpace(session.DisplayName) ? "Unnamed Session" : session.DisplayName;
-            }
-            return sessionName;
-        }
+                lastPosition[encoderIndex] = newPosition;
 
-
-        private void button1_Click(object sender, EventArgs e)
-        {
-            selectedApp[0] = (IAudioSession)comboBox2.SelectedItem;
-            selectedApp[1] = (IAudioSession)comboBox3.SelectedItem;
-            selectedApp[2] = (IAudioSession)comboBox11.SelectedItem;
-            selectedApp[3] = (IAudioSession)comboBox13.SelectedItem;
-            start_app();
-        }
-
-        private void start_app()
-        {
-            string arduinoPort = DetectArduinoPort();
-            if (arduinoPort == null)
-            {
-                Console.WriteLine("Arduino not found.");
-                return;
             }
-            using (SerialPort arduino = new SerialPort(arduinoPort, 9600))
+            int volumeChange = newPosition - lastPosition[encoderIndex];
+            AdjustSessionVolume(encoderIndex, volumeChange);
+            lastPosition[encoderIndex] = newPosition;
+
+        }
+        else if (parts.Length == 3 && int.TryParse(parts[0], out int encoderIndex2))
+        {
+            if (parts[2] == "P")
             {
-                arduino.Open();
-                while (true)
+                if (!buttonPressStarts[encoderIndex2].HasValue)
                 {
-                    try
-                    {
-                        string data = arduino.ReadLine().Trim();
-                        HandleArduinoInput(data);
-                    }
-                    catch (TimeoutException)
-                    {
-                        Console.WriteLine("Arduino Timeout");
-                    }
+                    buttonPressStarts[encoderIndex2] = DateTime.Now;
                 }
             }
-
-        }
-
-
-        private void HandleArduinoInput(string input)
-        {
-            // Input format is "Encoder#:Value" or "Encoder#::P" or "Encoder#::R"
-            var parts = input.Split(':');
-            if (parts.Length == 2 && int.TryParse(parts[0], out int encoderIndex) && int.TryParse(parts[1], out int newPosition))
+            else if (parts[2] == "R")
             {
-                if (encoderIndex >= 0 && encoderIndex < selectedApp.Length)
+                if (buttonPressStarts[encoderIndex2].HasValue && (DateTime.Now - buttonPressStarts[encoderIndex2].Value) > debounceTime)
                 {
-                    if (lastPosition[encoderIndex] == -333)
+                    foreach (var session in audioSessions)
                     {
-                        lastPosition[encoderIndex] = newPosition;
-
-                    }
-                    int volumeChange = newPosition - lastPosition[encoderIndex];
-                    AdjustSessionVolume(selectedApp[encoderIndex], volumeChange);
-                    lastPosition[encoderIndex] = newPosition;
-                }
-            }
-            else if (parts.Length == 3 && int.TryParse(parts[0], out int encoderIndex2))
-            {
-                if (parts[2] == "P")
-                {
-                    if (!buttonPressStarts[encoderIndex2].HasValue)
-                    {
-                        buttonPressStarts[encoderIndex2] = DateTime.Now;
-                    }
-                }
-                else if (parts[2] == "R")
-                {
-                    if (buttonPressStarts[encoderIndex2].HasValue && (DateTime.Now - buttonPressStarts[encoderIndex2].Value) > debounceTime)
-                    {
-                        foreach (var session in audioSessions)
+                        if (isCorrectSelectedApp(session.Id, encoderIndex2))
                         {
-                            if (session.ProcessId == selectedApp[encoderIndex2].ProcessId || session.DisplayName == selectedApp[encoderIndex2].DisplayName && session.DisplayName != "")
-                            {
-                                session.IsMuted = !session.IsMuted;
-                            }
+                            session.IsMuted = !session.IsMuted;
                         }
                     }
-
                 }
+
             }
         }
+    }
 
-        private void AdjustSessionVolume(IAudioSession app, int volumeChange)
+    static void AdjustSessionVolume(int encoderIndex, int volumeChange)
+    {
+        foreach (var session in audioSessions)
         {
-            foreach (var session in audioSessions)
+            if (isCorrectSelectedApp(session.Id, encoderIndex))
             {
-                if (session.ProcessId == app.ProcessId || session.DisplayName == app.DisplayName && session.DisplayName != "")
-                {
-                    double currentVolume = session.Volume;
-                    double newVolume = Math.Max(0, Math.Min(100, currentVolume + volumeChange));
-                    session.Volume = newVolume;
-                }
+                double currentVolume = session.Volume;
+                double newVolume = Math.Max(0, Math.Min(100, currentVolume + volumeChange));
+                session.Volume = newVolume;
             }
         }
+    }
 
-        private string DetectArduinoPort()
+    static bool isCorrectSelectedApp(string sessionId, int encoderIndex)
+    {
+        List<string> selectedApps = new List<string> { "", "Discord.exe", "vivaldi.exe", "DeadByDaylight-Win64-Shipping.exe" };
+        int lastBackslashIndex = sessionId.LastIndexOf("\\");
+        int percentBIndex = sessionId.IndexOf("%b");
+        if (lastBackslashIndex != -1 && percentBIndex != -1)
         {
-            string[] ports = SerialPort.GetPortNames();
-            foreach (string port in ports)
+            int start = lastBackslashIndex + 1;
+            int length = percentBIndex - start;
+            var a = sessionId.Substring(start, length).Trim();
+            if (sessionId.Substring(start, length).Trim() == selectedApps[encoderIndex])
             {
-                SerialPort testPort = new SerialPort(port, 9600);
-                try
-                {
-                    testPort.Open();
-                    testPort.WriteLine("VolumeWheel Arduino Check");
-                    testPort.ReadTimeout = 5000; // 5 seconds timeout
-
-                    try
-                    {
-                        string response = testPort.ReadLine();
-                        if (response.Trim() == "VolumeWheel Arduino Online")
-                        {
-                            testPort.Close();
-                            return port;
-                        }
-                    }
-                    catch (TimeoutException)
-                    {
-                        Console.WriteLine("Timeout");
-                    }
-
-                    testPort.Close();
-                }
-                catch
-                {
-                    Console.WriteLine("error");
-                }
+                return true;
             }
-            return null;
         }
+        return false;
+    }
+
+    static string DetectArduinoPort()
+    {
+        string[] ports = SerialPort.GetPortNames();
+        foreach (string port in ports)
+        {
+            SerialPort testPort = new SerialPort(port, 9600);
+
+            testPort.Open();
+            testPort.WriteLine("VolumeWheel Arduino Check");
+            testPort.ReadTimeout = 5000; // 5 seconds timeout
+
+            string response = testPort.ReadLine();
+            if (response.Trim() == "VolumeWheel Arduino Online")
+            {
+                testPort.Close();
+                return port;
+            }
+        }
+        return null;
     }
 }
